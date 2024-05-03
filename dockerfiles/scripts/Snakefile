@@ -1,0 +1,141 @@
+import pandas as pd
+import os
+from datetime import datetime
+
+# Configurations
+config = {
+    'repoPath': "../repository/",
+    'adapter': 'AGATCGGAAGAG',  # Replace with your adapter sequence (Illumina Universal Adapter)
+}
+
+inputpath = os.getenv('INPUTPATH', '/home/inputfiles/')
+try:
+    outPath = os.environ['OUTPUTPATH']
+except KeyError:
+    outPath = "output"
+outPath = "/home/output"
+
+xlsSamples = []
+for file in os.listdir("/home/inputfiles"):
+    if file.endswith(('.fastq.gz', '.fq.gz', '.fastq', '.fq', '.bam')):
+        filename, _ = os.path.splitext(file)
+        xlsSamples.append(filename)
+
+IDS = xlsSamples
+print(IDS)
+sampleSheetPath=""
+
+
+rule all:
+     input: expand("%s/{filename}/{filename}.csv" % outPath, filename=IDS)
+
+rule combineSampleMappingStats:
+    input:
+        miRNA = "%s/{filename}/{filename}.mirnas.csv" % outPath,
+        spikeins = "%s/{filename}/{filename}.spikeins.txt" % outPath
+    output: "%s/{filename}/{filename}.csv" % outPath
+    log:    "%s/logs/analysis/sampleMappingStats/{filename}.log" % outPath
+    threads: 4
+    shell:
+        "sleep 3 && Rscript combineSampleMappingStats.R --outFile='{output}' --input.miRNA='{input.miRNA}' --input.spikeins='{input.spikeins}' 2> {log}"
+
+
+rule combineAllMappingStats:
+    input:  csv = expand("%s/{filename}/{filename}.csv" % outPath, filename=IDS)
+    output: csv = "%s/all_samples.csv" % outPath
+    log:    "%s/logs/analysis/combineAllMappingStats.log" % outPath
+    threads: 1
+    shell:
+        "sleep 3 && Rscript combineAllMappingStats.R --outFile='{output.csv}' --includeSequence=0 {input.csv} 2> {log}"
+
+rule sortBowtieMapping:
+    input: "%s/{mapping}/{filename}.map" % outPath
+    output: "%s/{mapping}/{filename}.sorted.map" % outPath
+    log:    "%s/logs/{mapping}/{filename}.log" % outPath
+    threads: 1
+    shell:
+        "cat '{input}' | sort -nr -k2,2 -t \"x\" > '{output}' 2> {log}"
+
+
+rule miRDeepPrep:
+    input: "/home/inputfiles/{filename}.fastq"
+    output:
+        collapsedReads = "%s/{filename}/{filename}.collapsed.fa" % outPath
+    threads: 4
+    log:    "%s/logs/mapping_mirdeep2_miRNA/{filename}.log" % outPath
+    shell:
+        # -e input file is fastq
+        # -h parse to fasta format
+        # -j options removes entries with non-canonical letters
+        # -l option discards reads shorter than n nts
+        # -m option collapses the reads
+        # -p bowtie index of genome
+        # -o threads for bowtie
+        """
+            mapper.pl '{input}' -e -h -j -l %s -o {threads} -m -s '{output.collapsedReads}' > '{log}' 2>&1
+            rm -fr mapper_logs
+            rm -fr bowtie.log
+        """
+
+rule mappingMiRDeep2MiRNA:
+    input:
+        collapsedReads = "%s/{filename}/{filename}.collapsed.fa" % outPath
+    output:
+        map = "%s/{filename}/expression_analyses/expression_analyses_default/miRNA_expressed.csv" % outPath
+    params:
+        outputDir = "%s/{filename}" % outPath
+    threads: 4
+    log:    "%s/logs/mapping_mirdeep2_miRNA/{filename}.log" % outPath
+    shell:
+        """
+        subDirs=$(awk -F"/" '{{print NF-1}}' <<< "{input.collapsedReads}")
+        subDirPath=$(seq ${{subDirs}} | awk '{{printf "../"}}')
+        echo ${{subDirs}}
+        mkdir -p '{params.outputDir}'
+        cd '{params.outputDir}'
+        quantifier.pl -p '/home/repository/hairpin.filtered.dna.fa' -m '/home/repository/mature.filtered.dna.fa' \
+            -y 'default' \
+            -T {threads} \
+            -d \
+            -r "../${{subDirPath}}/{input.collapsedReads}" > "../${{subDirPath}}{log}" 2>&1
+        rm -fr expression_analyses/expression_analyses_default/*.ebwt
+        """
+
+rule mappingBBDukSpikeInsCore:
+    input: "/home/inputfiles/{filename}.fastq"
+    output: stats = "%s/{filename}/{filename}.spikeins.txt" % outPath
+    threads: 4
+    log:    "%s/logs/mapping_bbduk_spikeins_core/{filename}.log" % outPath
+    shell:
+        "bbduk.sh threads={threads} -Xmx12g in='{input}' outm=stdout.fq ref='/home/repository/mind-spike-ins.fa' stats='{output.stats}' statscolumns=5 k=13 maskmiddle=f rcomp=f hdist=0 edist=0 rename=t > /dev/null 2> {log}"
+
+rule mappingBBDukSpikeIns:
+    input:  "/home/inputfiles/{filename}.fastq"
+    output: stats = "%s/{filename}/{filename}.txt" % outPath
+    threads: 4
+    log:    "%s/logs/mapping_bbduk_spikeins/{filename}.log" % outPath
+    shell:
+        "bbduk.sh threads={threads} -Xmx12g in='{input}' outm=stdout.fq ref='/home/repository/spikeins.fa' stats='{output.stats}' statscolumns=5 k=21 maskmiddle=f rcomp=f hdist=0 edist=0 rename=t > /dev/null 2> {log}"
+
+rule collapseReadsFastq:
+    input:  "/home/inputfiles/{filename}.fastq"
+    output: "%s/fastq_collapsed/{filename}.fastq" % outPath
+    log:    "%s/logs/fastq_collapsed/{filename}.log" % outPath
+    params:
+        outPath = outPath
+    threads: 1
+    shell: """
+        seqcluster collapse -f '{input}' -o {params.outPath}/fastq_collapsed/{wildcards.filename}/ > {log} 2>&1
+        rename 's/_trimmed//' {params.outPath}/fastq_collapsed/{wildcards.filename}/*.fastq
+        mv {params.outPath}/fastq_collapsed/{wildcards.filename}/*.fastq {params.outPath}/fastq_collapsed/ &&
+        rm -fr {params.outPath}/fastq_collapsed/{wildcards.filename}/
+    """
+
+rule moveMirdeepOutput:
+    input: "%s/{filename}/expression_analyses/expression_analyses_default/miRNA_expressed.csv" % outPath
+    output: "%s/{filename}/{filename}.mirnas.csv" % outPath
+    log:    "%s/logs/moving/{filename}.log" % outPath
+    threads: 1
+    shell: """
+        mv /home/output/{wildcards.filename}/expression_analyses/expression_analyses_default/miRNA_expressed.csv {output} 2> {log}
+        """
