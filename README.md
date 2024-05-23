@@ -90,10 +90,10 @@ Project/
     └── sample.csv  # Combined normalized mapping statistic per miRNA from all samples
 ```
 
-5. Further Processing
+### 5. Further Processing
 The outputs can now be used for further spike-in quality control and concentration analysis. Check out [miND-spikein.R](https://github.com/tamirna/mind-spike-in-concentrations/blob/main/miND-spikein.R).
 
-Troubleshooting
+# Troubleshooting
 Ensure that the input directory contains only trimmed, filtered, and uncompressed FASTQ files.
 Verify that Docker is correctly installed and configured on your system.
 Check that the paths to the input and output directories are correctly specified.
