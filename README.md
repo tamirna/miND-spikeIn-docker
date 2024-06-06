@@ -38,20 +38,29 @@ Data Sorting and Collapsing: R script for organizing the mapping results by spec
 
 ## Getting Started
 
-### 1.0 The Docker image (build)
+### 1.0 Download the Docker image from Github container registry
+The Docker image can be downloaded via CLI command with docker from GitHub package registry. To download the image into your Docker environment, use:
+
+```bash
+docker pull ghcr.io/tamirna/mind-spikein-docker:latest
+docker tag ghcr.io/tamirna/mind-spikein-docker:latest mind-spikein-docker:latest
+```
+For more information, please refer to the official Docker [documentation](https://docs.docker.com/reference/cli/docker/image/pull/).
+
+### 1.1 (alternative) The Docker image (build)
 Quick start if your are using the terminal:
 ```bash
 git clone https://github.com/tamirna/mind-spikein-docker.git
 cd mind-spikein-docker
-docker build --tag=mind-spikein-public .
+docker build --tag=mind-spikein-docker .
 ```
 otherwise you can also download and unzip this repository.
 
-### 1.1 Download the Docker image or build it yourself
-The Docker image can be downloaded via GitHub and versioned in this repository. To load the image into your Docker environment, use:
+### 1.2 (alternative) Download the Docker image
+The Docker image can be downloaded via GitHub from your browser. To load the image into your Docker environment, use:
 
 ```bash
-docker load < mind-spikein-public.tar.gz
+docker load < mind-spikein-docker.tar.gz
 ```
 For more information, please refer to the official Docker [documentation](https://docs.docker.com/engine/reference/commandline/load/).
 
@@ -62,7 +71,7 @@ Ensure that your trimmed and quality filtered FASTQ files are placed in a single
 Executing the Workflow
 To execute the [Snakemake](https://snakemake.readthedocs.io/en/stable/) workflow inside the Docker container, input and output directories are required. Use the following command to provide the correct parameters and view container logs:
 ```bash
-docker run -d -it --name mind-spikein-public-container --mount type=bind,source="/path/to/input",target=/home/inputfiles --mount type=bind,source="/path/to/output",target=/home/output mind-spikein-public | xargs docker logs -f
+docker run -d -it --name mind-spikein-container --mount type=bind,source="/path/to/input",target=/home/inputfiles --mount type=bind,source="/path/to/output",target=/home/output mind-spikein-docker | xargs docker logs -f
 ```
 Replace **/path/to/input** and **/path/to/output** with the paths to your input directory (containing the trimmed FASTQ files) and the desired output directory, respectively.
 
